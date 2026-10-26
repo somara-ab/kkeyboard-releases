@@ -1,0 +1,58 @@
+name: Publish Microsoft Store package
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag whose Windows installer should be published
+        required: true
+        type: string
+  repository_dispatch:
+    types: [publish-store-package]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Deploy versioned installer URL
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.event.client_payload.tag || github.ref_name }}
+
+    steps:
+      - name: Download release installer
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$RELEASE_TAG" in
+            v[0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "Invalid release tag: $RELEASE_TAG" >&2; exit 1 ;;
+          esac
+          mkdir -p "site/store/$RELEASE_TAG"
+          curl --fail --location --retry 3 \
+            --output "site/store/$RELEASE_TAG/KKeyboardSetup-x64.exe" \
+            "https://github.com/somara-ab/kkeyboard-releases/releases/download/$RELEASE_TAG/KKeyboardSetup-x64.exe"
+          printf '<!doctype html><meta http-equiv="refresh" content="0; url=./%s/KKeyboardSetup-x64.exe">\n' "$RELEASE_TAG" > site/store/index.html
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Deploy Pages artifact
+        id: deployment
+        uses: actions/deploy-pages@v4
